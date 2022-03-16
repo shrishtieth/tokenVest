@@ -534,6 +534,9 @@ contract TokenVesting is  ReentrancyGuard {
   event OwnershipTransfer(uint256, address);
   event LockIncremented(uint256, uint256);
   event Withdrawn(uint256, uint256, address);
+  event LockTriggered(uint256 lockId);
+  event UnlockTriggered(uint256 lockId);
+
 
 
     constructor(
@@ -637,8 +640,7 @@ contract TokenVesting is  ReentrancyGuard {
         emit TokenLocked(token, _lockId, startTime, endTime, msg.sender);
     }
 
-    function triggerLock(uint256 _lockId) external{
-        require(isAdmin[msg.sender]==true,"Access Denied");
+    function triggerLock(uint256 _lockId) external nonReentrant{
         require(idToLock[_lockId].startEmission <= block.timestamp && idToLock[_lockId].isActive == false );
         address token = idToLock[_lockId].tokenAddress;
         uint256 fee = (platformFee*idToLock[_lockId].sharesDeposited)/100;
@@ -651,21 +653,24 @@ contract TokenVesting is  ReentrancyGuard {
         }  
 
         idToLock[_lockId].isActive=true;
+        emit LockTriggered(_lockId);
     }
 
-    function triggerUnlock(uint256 _lockId) external{
-        require(isAdmin[msg.sender]==true,"Access Denied");
+    function triggerUnlock(uint256 _lockId) external nonReentrant{
         require(idToLock[_lockId].endEmission <= block.timestamp && idToLock[_lockId].isActive == true );
         address[] memory list = idToListOfWithdrawer[_lockId];
         for(uint256 i=0; i< list.length;i++){
-        idToWithdrawableAmount[_lockId][msg.sender] = 0;
+        uint256 amount = idToWithdrawableAmount[_lockId][msg.sender];
+        idToWithdrawableAmount[_lockId][msg.sender] = idToWithdrawableAmount[_lockId][msg.sender]-amount;
         idToClaimedAmount[_lockId][msg.sender]= idToClaimedAmount[_lockId][msg.sender]+amount;
         idToLock[_lockId].sharesWithdrawn = idToLock[_lockId].sharesWithdrawn+amount;
         address token = idToLock[_lockId].tokenAddress;
         IERC20(token).approve(address(this), amount);  
-        IERC20(token).transferFrom(address(this), msg.sender, amount);
-        //   idToWithdrawableAmount[_lockId][msg.sender]  
+        IERC20(token).transferFrom(address(this), msg.sender, amount); 
+
         }
+        idToLock[_lockId].isActive == false;
+        emit UnlockTriggered(_lockId);
     }
 
     function transferLockOwnership(uint256 _lockId, address newOwner) external nonReentrant{
